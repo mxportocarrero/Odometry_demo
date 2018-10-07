@@ -1,14 +1,10 @@
-/*
+/**
+Rotating Cube
 
-Ejemplo Base:
-
-Como dibujar el triangulos
-
-Codigo para compilar
-g++ t.cpp common/shader.cpp -o test -lGL -lGLEW -lglfw
+g++ t3.cpp common/shader.cpp -o test3 -lGL -lGLEW -lglfw
 
 Tambien podemos verificar el makefile que realizes
-*/
+**/
 
 
 #include <iostream>
@@ -27,9 +23,13 @@ Tambien podemos verificar el makefile que realizes
 GLFWwindow * window;
 
 // Include GLM
+#define GLM_FORCE_RADIANS // poner este header para que la funcion rotate no se queje
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #include "common/shader.hpp"
+#include "common/register.hpp"
 
 
 using namespace std;
@@ -81,18 +81,23 @@ int main(){
 	glBindVertexArray(VertexArrayID);
 
 	// Creamos y compilamos nuestro programa GLSL a partir de los shaders
-	GLuint programID = LoadShaders("shaders/SimpleVertexShader.vertexshader", "shaders/SimpleFragmentShader.fragmentshader");
+	GLuint programID = LoadShaders("shaders/t3.vertexshader", "shaders/t3.fragmentshader");
 
-	static const GLfloat g_vertex_buffer_data[] = {
-     -0.5f, -0.5f, 0.0f,
-      0.5f, -0.5f, 0.0f,
-      0.0f,  0.5f, 0.0f,
+	static const GLfloat vertices[] = {
+		// first triangle
+		0.5f, 0.5f, 0.0f,
+		0.5f, -0.5f, 0.0f,
+		-0.5f,  0.5f, 0.0f,
+		// second triangle
+		0.5f, -0.5f, 0.0f,
+		-0.5f, -0.5f, 0.0f,
+		-0.5f,  0.5f, 0.0f,
 	};
 
 	GLuint vertexbuffer;
 	glGenBuffers(1, &vertexbuffer);
 	glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(g_vertex_buffer_data), g_vertex_buffer_data, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
 	//
 	// Fin de la Etapa de Registro
@@ -104,6 +109,28 @@ int main(){
 
       // Use our shader
       glUseProgram(programID);
+
+      // updating a uniform color
+      float timeValue = glfwGetTime();
+      float greenValue = sin(timeValue) / 2.0f + 0.5f;
+      glm::vec4 vec(0.0f, greenValue, 0.0f, 1.0f);
+      RegisterUniform4fv(programID,"ourColor",vec);
+      //int vertexColorLocation = glGetUniformLocation(programID,"ourColor");
+      //glUniform4f(vertexColorLocation, 0.0f, greenValue, 0.0f, 1.0f);
+
+      // rotating the rectangle
+      glm::mat4 trans;	
+      //trans = glm::rotate(trans, glm::radians(45.0f), glm::vec3(0.0f,0.0f,1.0f));
+      // actualizando los valores podemos rotar el cuadrado en el tiempo
+      trans = glm::rotate(trans, (float)glfwGetTime(), glm::vec3(0.0f,0.0f,1.0f));
+      // Algunas notas sobre la rotacion
+      // el angulo o cantidad de rotacion debe encontrarse en radianes
+      // el ultimo parametro es el vector de rotacion, DEBE SER UNITARIO, normalizar antes de ponerlo
+      // Las matrices se acumulan automaticamente
+      trans = glm::scale(trans, glm::vec3(0.5f,0.5f,0.5f));
+      // Mandamos los valores a los shaders
+      int transformLoc = glGetUniformLocation(programID,"transform");
+      glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
 
       /**Drawing stage**/
       // 1st attribute buffer : vertices
@@ -118,7 +145,9 @@ int main(){
          (void*)0    // array buffer offset
       );
 
-      glDrawArrays(GL_TRIANGLES, 0, 3); // 3 indices starting at 0 -> 1 triangle
+      //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE); // Para dibujar solo en wireframe
+
+      glDrawArrays(GL_TRIANGLES, 0, 6); // 3 indices starting at 0 -> 1 triangle
 
       glDisableVertexAttribArray(0);
 

@@ -119,7 +119,7 @@ int main(){
       //glUniform4f(vertexColorLocation, 0.0f, greenValue, 0.0f, 1.0f);
 
       // rotating the rectangle
-      glm::mat4 trans;	
+      glm::mat4 trans(1.0f); // Debemos inicializar asi para que no deje de renderizar
       //trans = glm::rotate(trans, glm::radians(45.0f), glm::vec3(0.0f,0.0f,1.0f));
       // actualizando los valores podemos rotar el cuadrado en el tiempo
       trans = glm::rotate(trans, (float)glfwGetTime(), glm::vec3(0.0f,0.0f,1.0f));

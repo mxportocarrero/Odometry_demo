@@ -12,6 +12,11 @@ Tambien podemos verificar el makefile que realizes
 // Incluir librerias standar
 #include <stdio.h>
 #include <stdlib.h>
+#include <algorithm> // std::copy
+
+// Include SSE/AVX2 Libraries
+// -------------------
+#include <immintrin.h>
 
 // Incluimos el GLEW
 // Esta libreria nos sirve para aumentar algunas funciones que no vienen por defecto
@@ -35,6 +40,109 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 void processInput(GLFWwindow *window);
+
+// Declaring some Matrix Arithmetic.
+// examples taken from https://gist.github.com/rygorous/4172889
+
+// La razón por la que declaramos nuestra matrix como union, es para poder interpretar nuestra
+// data tanto como un doble arreglo de floats o un arreglo de vectores intrinsecos para SIMD
+union Mat44 {
+    float m[4][4];
+    __m128 row[4];
+};
+
+// Tengamos en cuenta que una multiplicación de matrices puede llevarse a cabo de diferentes formas
+// en nuestro caso, expresamos este proceso mediante combinaciones lineales(linear combination). Ver agenda
+static inline __m128  lincomb_SSE(const __m128 &a, const Mat44 &B){
+	__m128 result;
+	// Usamos el shuffle para realizar un broadcast de una variable
+	// (copiar un valor a todos los espacios de un mm128). mas info en http://www.songho.ca/misc/sse/sse.html
+	// ------------------------------------------------------------------------------------------------------
+	result = _mm_mul_ps(_mm_shuffle_ps(a,a, 0x00), B.row[0]);
+	result = _mm_add_ps(result, _mm_mul_ps(_mm_shuffle_ps(a,a, 0x55), B.row[1]));
+	result = _mm_add_ps(result, _mm_mul_ps(_mm_shuffle_ps(a,a, 0xaa), B.row[2]));
+	result = _mm_add_ps(result, _mm_mul_ps(_mm_shuffle_ps(a,a, 0xff), B.row[3]));
+	return result;	
+}
+
+void matmul_SSE(Mat44 &out, const Mat44 &A, const Mat44 &B){
+	__m128 out0row =  lincomb_SSE(A.row[0],B);
+	__m128 out1row =  lincomb_SSE(A.row[1],B);
+	__m128 out2row =  lincomb_SSE(A.row[2],B);
+	__m128 out3row =  lincomb_SSE(A.row[3],B);
+
+	out.row[0] = out0row;
+	out.row[1] = out1row;
+	out.row[2] = out2row;
+	out.row[3] = out3row;
+}
+
+// Esta funcion usa los intrinsecos AVX, aprovechando la extension a 256 bits de los registros YMM
+// Como son matrices 4x4, podemos aprovechar ello y hacer calculos duales
+// Es decir de 2 en 2 filas
+static inline __mm256 dual_lincomb_AVX8(__m256 A01, const Mat44 &B){
+	__mm256 result;
+
+	result = _mm256_mul_ps(_mm256_shuffle_ps(A01,A01, 0x00), _mm256_broadcast_ps(&B.row[0]));
+	result = _mm256_add_ps(result, _mm256_mul_ps(_mm256_shuffle_ps(A01,A01, 0x55), _mm256_broadcast_ps(&B.row[1])));
+	result = _mm256_add_ps(result, _mm256_mul_ps(_mm256_shuffle_ps(A01,A01, 0xaa), _mm256_broadcast_ps(&B.row[2])));
+	result = _mm256_add_ps(result, _mm256_mul_ps(_mm256_shuffle_ps(A01,A01, 0xff), _mm256_broadcast_ps(&B.row[3])));
+	return result;
+}
+
+void dual_matmul_AVX8(Mat44 &out, const Mat44 &A, const Mat44 &B){
+	_mm256_zeroupper(); // Limpiamos los registros ymm
+
+	// Cargamos los valores al registro, usamos la funcion para datos no alineados
+	__m256 A01 = _mm256_loadu_ps(&A.m[0][0]); // Filas 0 y 1
+	__m256 A23 = _mm256_loadu_ps(&A.m[0][0]); // Filas 2 y 3
+
+	__m256 out01rows = dual_lincomb_AVX8(A01,B);
+	__m256 out23rows = dual_lincomb_AVX8(A23,B);
+
+	// Guardamos los valores calculados al sector de memoria especificado de salida
+	_mm256_storeu_ps(&out.m[0][0], out01rows);
+	_mm256_storeu_ps(&out.m[0][0], out23rows);
+}
+
+//Realizamos un enum para tener un mejor acceso a las variables
+struct quaterion{
+	float *data;
+	float w(){return data[0];}
+	float x(){return data[1];}
+	float y(){return data[2];}
+	float z(){return data[3];}
+};
+// Conversion functions
+// Funcion que devuelve el objeto Mat44 a partir de un arreglo de 4 floats(unit quaternion)
+Mat44 Quaternion_2_Mat44(const quaternion &q){
+	// Creamos las dos matrices según lo propuesto en: (Alternativa 1)
+	// http://www.euclideanspace.com/maths/geometry/rotations/conversions/quaternionToMatrix/index.htm
+	Mat44 A,B,RotationMatrix;
+
+	float Atemp[] = {
+		 q.w(),	 q.z(),	-q.y(),	 q.x(),
+		-q.z(),	 q.w(),	 q.x(),	 q.y(),
+		 q.y(),	-q.x(),	 q.w(),	 q.z(),
+		-q.x(),	-q.y(),	-q.z(),	 q.w()
+	}
+
+	float Btemp[] = {
+		 q.w(),	 q.z(),	-q.y(),	-q.x(),
+		-q.z(),	 q.w(),	 q.x(),	-q.y(),
+		 q.y(),	-q.x(),	 q.w(),	-q.z(),
+		 q.x(),	 q.y(),	 q.z(),	 q.w()
+	}
+
+	// Copiamos los datos a nuestras funciones A y B
+	// Preferred method to copy raw arrays in C++. works with all types
+	std::copy(Atemp,Atemp+16,A.m[0]);
+	std::copy(Btemp,Btemp+16,B.m[0]);
+
+	dual_matmul_AVX8(RotationMatrix,A,B);
+
+	return RotationMatrix;
+}
 
 // settings
 const unsigned int SCR_WIDTH = 600;
@@ -185,6 +293,8 @@ int main(){
 	//
 	// Fin de la Etapa de Registro
 	//
+
+	// Etapa iterativa de la ventana
 
 	do{
 		// per-frame time logic

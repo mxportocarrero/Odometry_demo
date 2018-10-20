@@ -109,7 +109,7 @@ int main(){
 	glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
 
 	// Creamos y compilamos nuestro programa GLSL a partir de los shaders
-	GLuint programID = LoadShaders("shaders/t3.vertexshader", "shaders/t3.fragmentshader");
+	GLuint programID = LoadShaders("shaders/t4.vertexshader", "shaders/t4.fragmentshader");
 
 	float vertices[] = {
         -0.5f, -0.5f, -0.5f,
@@ -154,7 +154,7 @@ int main(){
         -0.5f,  0.5f,  0.5f,
         -0.5f,  0.5f, -0.5f
     };
-    
+
     // world space positions of our cubes
     glm::vec3 cubePositions[] = {
         glm::vec3( 0.0f,  0.0f,  0.0f),

@@ -110,16 +110,16 @@ void dual_matmul_AVX8(Mat44 &out, const Mat44 &A, const Mat44 &B){
 //Realizamos un enum para tener un mejor acceso a las variables
 struct Quaterion{
 	float data[4];
-	float w(){return data[0];}
-	float x(){return data[1];}
-	float y(){return data[2];}
-	float z(){return data[3];}
+	float x(){return data[0];}
+	float y(){return data[1];}
+	float z(){return data[2];}
+	float w(){return data[3];}
 
-	quaternion(const float &w,const float &x,const float &y,const float &z){
-		data[0] = w;
-		data[1] = x;
-		data[2] = y;
-		data[3] = z;
+	quaternion(const float &qx,const float &qy,const float &qz,const float &qw){
+		data[0] = qx;
+		data[1] = qy;
+		data[2] = qz;
+		data[3] = qw;
 	}
 };
 // Conversion functions
@@ -153,6 +153,47 @@ Mat44 Quaternion_2_Mat44(const Quaternion &q){
 	return RotationMatrix;
 }
 
+// Funcion sobrecargada que acepta tambien un vector de traslación
+Mat44 Quaternion_2_Mat44(const float &tx, const float &ty, const float &tz, const float &qx,const float &qy,const float &qz,const float &qw){
+	// Creamos el quaternion
+	Quaternion q(qx,qy,qz,qw);
+
+	// Creamos las dos matrices según lo propuesto en: (Alternativa 1)
+	// http://www.euclideanspace.com/maths/geometry/rotations/conversions/quaternionToMatrix/index.htm
+	Mat44 A,B,ResultMatrix;
+
+	float Atemp[] = {
+		 q.w(),	 q.z(),	-q.y(),	 q.x(),
+		-q.z(),	 q.w(),	 q.x(),	 q.y(),
+		 q.y(),	-q.x(),	 q.w(),	 q.z(),
+		-q.x(),	-q.y(),	-q.z(),	 q.w()
+	}
+
+	float Btemp[] = {
+		 q.w(),	 q.z(),	-q.y(),	-q.x(),
+		-q.z(),	 q.w(),	 q.x(),	-q.y(),
+		 q.y(),	-q.x(),	 q.w(),	-q.z(),
+		 q.x(),	 q.y(),	 q.z(),	 q.w()
+	}
+
+	// Copiamos los datos a nuestras funciones A y B
+	// Preferred method to copy raw arrays in C++. works with all types
+	std::copy(Atemp,Atemp+16,A.m[0]);
+	std::copy(Btemp,Btemp+16,B.m[0]);
+
+	// Este producto de matrices nos devuelve una matriz de la forma 
+	// [R 0]
+	// [0 1]
+	dual_matmul_AVX8(ResultMatrix,A,B);
+
+	// Agregamos los valores de traslacion a nuestras matrices
+	ResultMatrix[0][3] = tx;
+	ResultMatrix[1][3] = ty;
+	ResultMatrix[2][3] = tz;
+
+	return ResultMatrix;
+}
+
 // settings
 const unsigned int SCR_WIDTH = 600;
 const unsigned int SCR_HEIGHT = 600;
@@ -179,9 +220,10 @@ float lastFrame = 0.0f;
 using namespace std;
 
 int main(){
-	std::vector<quaternion> v;
+	// RBM(Rigid Body Motion) will store all the Mat44 matrices for every frame
+	std::vector<Mat44> RBM;
 
-	// Loading Groundtruth Data
+	// Loading/Reading Groundtruth Data
 	std::ifstream data_file;
 	data_file.open("data/groundtruth.txt");
 
@@ -192,10 +234,15 @@ int main(){
 			// Detect whether or not it is reading a comment
 			if(line[0] != '#'){
 				temp = split(line,' ');
-				v.push_back(Quaternion(std::stof(temp[4]),std::stof(temp[5]),std::stof(temp[6]),std::stof(temp[7])));
+				// Capturing Rotation data
+				// Recordemos que la funcion push_back crea una copia del argumento y la almacena en sus vectores
+				RBM.push_back(Quaternion_2_Mat44(std::stof(temp[1]),std::stof(temp[2]),std::stof(temp[3]),std::stof(temp[4]),std::stof(temp[5]),std::stof(temp[6]),std::stof(temp[6])));
+				//Quaternion q(std::stof(temp[4]),std::stof(temp[5]),std::stof(temp[6]),std::stof(temp[7]));
 			}
 		} // Fin del bucle while
 	} // Fin del condicional exterior
+
+	// Transforming the Quaternion
 	
 
 

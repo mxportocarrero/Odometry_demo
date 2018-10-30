@@ -82,8 +82,8 @@ void matmul_SSE(Mat44 &out, const Mat44 &A, const Mat44 &B){
 // Esta funcion usa los intrinsecos AVX, aprovechando la extension a 256 bits de los registros YMM
 // Como son matrices 4x4, podemos aprovechar ello y hacer calculos duales
 // Es decir de 2 en 2 filas
-static inline __mm256 dual_lincomb_AVX8(__m256 A01, const Mat44 &B){
-	__mm256 result;
+static inline __m256 dual_lincomb_AVX8(__m256 A01, const Mat44 &B){
+	__m256 result;
 
 	result = _mm256_mul_ps(_mm256_shuffle_ps(A01,A01, 0x00), _mm256_broadcast_ps(&B.row[0]));
 	result = _mm256_add_ps(result, _mm256_mul_ps(_mm256_shuffle_ps(A01,A01, 0x55), _mm256_broadcast_ps(&B.row[1])));
@@ -108,20 +108,22 @@ void dual_matmul_AVX8(Mat44 &out, const Mat44 &A, const Mat44 &B){
 }
 
 //Realizamos un enum para tener un mejor acceso a las variables
-struct Quaterion{
+struct Quaternion{
 	float data[4];
-	float x(){return data[0];}
-	float y(){return data[1];}
-	float z(){return data[2];}
-	float w(){return data[3];}
+	float x() const {return data[0];}
+	float y() const {return data[1];}
+	float z() const {return data[2];}
+	float w() const {return data[3];}
 
-	quaternion(const float &qx,const float &qy,const float &qz,const float &qw){
+	Quaternion(const float &qx,const float &qy,const float &qz,const float &qw){
 		data[0] = qx;
 		data[1] = qy;
 		data[2] = qz;
 		data[3] = qw;
 	}
 };
+
+
 // Conversion functions
 // Funcion que devuelve el objeto Mat44 a partir de un arreglo de 4 floats(unit quaternion)
 Mat44 Quaternion_2_Mat44(const Quaternion &q){
@@ -134,14 +136,14 @@ Mat44 Quaternion_2_Mat44(const Quaternion &q){
 		-q.z(),	 q.w(),	 q.x(),	 q.y(),
 		 q.y(),	-q.x(),	 q.w(),	 q.z(),
 		-q.x(),	-q.y(),	-q.z(),	 q.w()
-	}
+	};
 
 	float Btemp[] = {
 		 q.w(),	 q.z(),	-q.y(),	-q.x(),
 		-q.z(),	 q.w(),	 q.x(),	-q.y(),
 		 q.y(),	-q.x(),	 q.w(),	-q.z(),
 		 q.x(),	 q.y(),	 q.z(),	 q.w()
-	}
+	};
 
 	// Copiamos los datos a nuestras funciones A y B
 	// Preferred method to copy raw arrays in C++. works with all types
@@ -167,14 +169,14 @@ Mat44 Quaternion_2_Mat44(const float &tx, const float &ty, const float &tz, cons
 		-q.z(),	 q.w(),	 q.x(),	 q.y(),
 		 q.y(),	-q.x(),	 q.w(),	 q.z(),
 		-q.x(),	-q.y(),	-q.z(),	 q.w()
-	}
+	};
 
 	float Btemp[] = {
 		 q.w(),	 q.z(),	-q.y(),	-q.x(),
 		-q.z(),	 q.w(),	 q.x(),	-q.y(),
 		 q.y(),	-q.x(),	 q.w(),	-q.z(),
 		 q.x(),	 q.y(),	 q.z(),	 q.w()
-	}
+	};
 
 	// Copiamos los datos a nuestras funciones A y B
 	// Preferred method to copy raw arrays in C++. works with all types
@@ -187,9 +189,9 @@ Mat44 Quaternion_2_Mat44(const float &tx, const float &ty, const float &tz, cons
 	dual_matmul_AVX8(ResultMatrix,A,B);
 
 	// Agregamos los valores de traslacion a nuestras matrices
-	ResultMatrix[0][3] = tx;
-	ResultMatrix[1][3] = ty;
-	ResultMatrix[2][3] = tz;
+	ResultMatrix.m[0][3] = tx;
+	ResultMatrix.m[1][3] = ty;
+	ResultMatrix.m[2][3] = tz;
 
 	return ResultMatrix;
 }
@@ -236,14 +238,11 @@ int main(){
 				temp = split(line,' ');
 				// Capturing Rotation data
 				// Recordemos que la funcion push_back crea una copia del argumento y la almacena en sus vectores
-				RBM.push_back(Quaternion_2_Mat44(std::stof(temp[1]),std::stof(temp[2]),std::stof(temp[3]),std::stof(temp[4]),std::stof(temp[5]),std::stof(temp[6]),std::stof(temp[6])));
+				RBM.push_back(Quaternion_2_Mat44(std::stof(temp[1]),std::stof(temp[2]),std::stof(temp[3]),std::stof(temp[4]),std::stof(temp[5]),std::stof(temp[6]),std::stof(temp[7])));
 				//Quaternion q(std::stof(temp[4]),std::stof(temp[5]),std::stof(temp[6]),std::stof(temp[7]));
 			}
 		} // Fin del bucle while
 	} // Fin del condicional exterior
-
-	// Transforming the Quaternion
-	
 
 
 
@@ -297,63 +296,14 @@ int main(){
 	// Creamos y compilamos nuestro programa GLSL a partir de los shaders
 	GLuint programID = LoadShaders("shaders/t4.vertexshader", "shaders/t4.fragmentshader");
 
-	static const GLfloat vertices[] = {
-		-0.5f, -0.5f, -0.5f,
-         0.5f, -0.5f, -0.5f,
-         0.5f,  0.5f, -0.5f,
-         0.5f,  0.5f, -0.5f,
-        -0.5f,  0.5f, -0.5f,
-        -0.5f, -0.5f, -0.5f,
+	GLfloat vertices[RBM.size()*3];
 
-        -0.5f, -0.5f,  0.5f,
-         0.5f, -0.5f,  0.5f,
-         0.5f,  0.5f,  0.5f,
-         0.5f,  0.5f,  0.5f,
-        -0.5f,  0.5f,  0.5f,
-        -0.5f, -0.5f,  0.5f,
+	for(int i = 0; i < RBM.size(); ++i){
+		vertices[i*3+0] = RBM[i].m[0][3];
+		vertices[i*3+1] = RBM[i].m[1][3];
+		vertices[i*3+2] = RBM[i].m[2][3];
+	}
 
-        -0.5f,  0.5f,  0.5f,
-        -0.5f,  0.5f, -0.5f,
-        -0.5f, -0.5f, -0.5f,
-        -0.5f, -0.5f, -0.5f,
-        -0.5f, -0.5f,  0.5f,
-        -0.5f,  0.5f,  0.5f,
-
-         0.5f,  0.5f,  0.5f,
-         0.5f,  0.5f, -0.5f,
-         0.5f, -0.5f, -0.5f,
-         0.5f, -0.5f, -0.5f,
-         0.5f, -0.5f,  0.5f,
-         0.5f,  0.5f,  0.5f,
-
-        -0.5f, -0.5f, -0.5f,
-         0.5f, -0.5f, -0.5f,
-         0.5f, -0.5f,  0.5f,
-         0.5f, -0.5f,  0.5f,
-        -0.5f, -0.5f,  0.5f,
-        -0.5f, -0.5f, -0.5f,
-
-        -0.5f,  0.5f, -0.5f,
-         0.5f,  0.5f, -0.5f,
-         0.5f,  0.5f,  0.5f,
-         0.5f,  0.5f,  0.5f,
-        -0.5f,  0.5f,  0.5f,
-        -0.5f,  0.5f, -0.5f,
-	};
-
-	// world space positions of our cubes
-    glm::vec3 cubePositions[] = {
-        glm::vec3( 0.0f,  0.0f,  0.0f),
-        glm::vec3( 2.0f,  5.0f, -15.0f),
-        glm::vec3(-1.5f, -2.2f, -2.5f),
-        glm::vec3(-3.8f, -2.0f, -12.3f),
-        glm::vec3( 2.4f, -0.4f, -3.5f),
-        glm::vec3(-1.7f,  3.0f, -7.5f),
-        glm::vec3( 1.3f, -2.0f, -2.5f),
-        glm::vec3( 1.5f,  2.0f, -2.5f),
-        glm::vec3( 1.5f,  0.2f, -1.5f),
-        glm::vec3(-1.3f,  1.0f, -1.5f)
-    };
 
 	//
 	// Registering the VAOs
@@ -372,11 +322,16 @@ int main(){
 	//
 
 	// Etapa iterativa de la ventana
-
+	float TargetFPS = 20.0; // fps measured in milliseconds
+	float TimePerFrame = 1000.0 / TargetFPS; // in milliseconds
+	int frames = 0;float timeValue;
 	do{
 		// per-frame time logic
-		float timeValue = glfwGetTime();
-		deltaTime = timeValue - lastFrame;
+
+		//while(deltaTime < TimePerFrame){
+			timeValue = glfwGetTime();
+			deltaTime = timeValue - lastFrame;
+		//}
 		lastFrame = timeValue;
 
 		// Consultamos los inputs
@@ -402,21 +357,13 @@ int main(){
 		RegisterMatrix4fv(programID,"projection",projection);
 
 
-
 		// updating a uniform color
-		float greenValue = sin(timeValue) / 2.0f + 0.5f;
+		//float greenValue = sin(timeValue) / 2.0f + 0.5f;
+		float greenValue = 1.0f;
 		glm::vec4 vec(0.0f, greenValue, 0.0f, 1.0f);
 		RegisterUniform4fv(programID,"ourColor",vec);
 		//int vertexColorLocation = glGetUniformLocation(programID,"ourColor");
 		//glUniform4f(vertexColorLocation, 0.0f, greenValue, 0.0f, 1.0f);
-
-		// rotating the rectangle
-		glm::mat4 trans;	
-		// actualizando los valores podemos rotar el cuadrado en el tiempo
-		trans = glm::rotate(trans, (float)glfwGetTime(), glm::vec3(0.0f,0.0f,1.0f));
-		trans = glm::scale(trans, glm::vec3(0.5f,0.5f,0.5f));
-		// Mandamos los valores a los shaders
-		RegisterMatrix4fv(programID,"transform",trans);
 
 		/**Drawing stage**/
 		// 1st attribute buffer : vertices
@@ -433,23 +380,25 @@ int main(){
 
         //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE); // Para dibujar solo en wireframe
 
-        for(int i = 0 ; i < 10; ++i){
-        	// Calculamos la matriz modelo para cada objeto segun nuestro array
-        	glm::mat4 model(1.0f);
-        	model = glm ::translate(model,cubePositions[i]);
-        	float angle = 20.0f * i;
-        	//model = glm::rotate(model, (float)glfwGetTime() *  glm::radians(50.f), glm::vec3(1.0f, 0.3f, 0.5f));
-        	model = glm::rotate(model, (float)glfwGetTime() *  glm::radians(angle), glm::vec3(1.0f, 0.3f, 0.5f));
-        	RegisterMatrix4fv(programID,"model",model);
+        // Calculamos la matriz modelo para cada objeto segun nuestro array
+        glm::mat4 model(1.0f);
+        //model = glm ::translate(model,cubePositions[i]);
+        //float angle = 20.0f * i;
+        //model = glm::rotate(model, (float)glfwGetTime() *  glm::radians(50.f), glm::vec3(1.0f, 0.3f, 0.5f));
+        //model = glm::rotate(model, (float)glfwGetTime() *  glm::radians(angle), glm::vec3(1.0f, 0.3f, 0.5f));
+        RegisterMatrix4fv(programID,"model",model);
 
-        	glDrawArrays(GL_TRIANGLES, 0, 36); // 3 indices starting at 0 -> 1 triangle
-        }
+        glDrawArrays(GL_LINE_STRIP, 0, frames); // 3 indices starting at 0 -> 1 triangle
 
         glDisableVertexAttribArray(0);
 
         /**Final Stage: Refreshing buffers**/
         glfwSwapBuffers(window);
         glfwPollEvents(); // Revisa si se ha emitido algun evento
+
+        frames++;
+        if(frames >= RBM.size())
+        	frames--;
 	}
 	// Check if the ESC key was pressed or the window was closed
 	while(glfwGetKey(window,GLFW_KEY_ESCAPE) != GLFW_PRESS && glfwWindowShouldClose(window) == 0);

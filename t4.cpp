@@ -102,18 +102,17 @@ int main(){
 	}
 
 	// configure global opengl state
-	// ------------------------------
-	glEnable(GL_DEPTH_TEST);
+    // -----------------------------
+    glEnable(GL_DEPTH_TEST);
 
 	// Ensure we can capture the escape key being pressed below
 	glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
 
-
 	// Creamos y compilamos nuestro programa GLSL a partir de los shaders
 	GLuint programID = LoadShaders("shaders/t4.vertexshader", "shaders/t4.fragmentshader");
 
-	static const GLfloat vertices[] = {
-		-0.5f, -0.5f, -0.5f,
+	float vertices[] = {
+        -0.5f, -0.5f, -0.5f,
          0.5f, -0.5f, -0.5f,
          0.5f,  0.5f, -0.5f,
          0.5f,  0.5f, -0.5f,
@@ -153,10 +152,10 @@ int main(){
          0.5f,  0.5f,  0.5f,
          0.5f,  0.5f,  0.5f,
         -0.5f,  0.5f,  0.5f,
-        -0.5f,  0.5f, -0.5f,
-	};
+        -0.5f,  0.5f, -0.5f
+    };
 
-	// world space positions of our cubes
+    // world space positions of our cubes
     glm::vec3 cubePositions[] = {
         glm::vec3( 0.0f,  0.0f,  0.0f),
         glm::vec3( 2.0f,  5.0f, -15.0f),

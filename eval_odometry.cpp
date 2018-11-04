@@ -1,10 +1,19 @@
 /**
 Rotating Cubes in 3D in Perspective View
 
-g++ eval_odometry.cpp common/shader.cpp -o eval_odometry -lGL -lGLEW -lglfw
+g++ eval_odometry.cpp common/shader.cpp -o eval_odometry -lGL -lGLEW -lglfw -O3 -mavx2
 
 Tambien podemos verificar el makefile que realizes
 **/
+
+// Precision de las imagenes, podemos alternar entre floats o dobles
+//#define Double_Precision
+
+#ifdef Double_Precision
+typedef double myNum;
+#else
+typedef float myNum;
+#endif // Double_Precision
 
 // Incluir librerias standar
 #include <stdio.h>
@@ -14,6 +23,7 @@ Tambien podemos verificar el makefile que realizes
 #include <iostream>
 #include <string>
 #include <vector>
+#include <map>
 
 // Include SSE/AVX2 Libraries
 // -------------------
@@ -34,14 +44,23 @@ GLFWwindow * window;
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+// Import Eigen
+#include <eigen3/Eigen/Dense>
+#include <eigen3/unsupported/Eigen/MatrixFunctions> // Para hacer uso de esta libreria
+// tuve que modificar algunos includes en el source code que utiliza por q referenciaba
+// #include <Eigen/Core> pero deberia ser en mi caso #include <eigen3/Eigen/Core>
+
 #include "common/shader.hpp"
 #include "common/register.hpp"
+#include "common/linear_algebra_functions.hpp"
 #include "common/utilities.hpp"
+
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 void processInput(GLFWwindow *window);
+
 
 // Declaring some Matrix Arithmetic.
 // examples taken from https://gist.github.com/rygorous/4172889
@@ -196,13 +215,31 @@ Mat44 Quaternion_2_Mat44(const float &tx, const float &ty, const float &tz, cons
 	return ResultMatrix;
 }
 
+Mat44 TwistCoord_2_Mat44(const float &v1, const float &v2, const float &v3, const float &w1,const float &w2,const float &w3){
+	Eigen::VectorXd xi(6);
+	xi << v1,v2,v3,w1,w2,w3;
+
+	Eigen::Matrix4d rbm = twistcoord2rbm(xi);
+
+	Mat44 ResultMatrix;
+
+	// Copying data into mat44
+	for(int rows = 0; rows < 4; ++rows){
+		for(int cols = 0; cols < 4; ++cols){
+			ResultMatrix.m[rows][cols] = rbm(rows,cols);
+		}
+	}
+
+	return ResultMatrix;
+}
+
 // settings
 const unsigned int SCR_WIDTH = 600;
 const unsigned int SCR_HEIGHT = 600;
 
 // Global variables
 // ------------------
-// camera
+// camera // View from Z axis
 glm::vec3 cameraPos   = glm::vec3(0.0f, 0.0f, 3.0f);
 glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
 glm::vec3 cameraUp    = glm::vec3(0.0f, 1.0f, 0.0f);
@@ -221,13 +258,13 @@ float lastFrame = 0.0f;
 
 using namespace std;
 
-int main(){
-	// RBM(Rigid Body Motion) will store all the Mat44 matrices for every frame
-	std::vector<Mat44> RBM;
+enum MotionType{RBM_mat,TCoord,Quad};
 
+void read_inputfile(std::map<double,Mat44> & data, const char* filename, const int & motion_type){
 	// Loading/Reading Groundtruth Data
 	std::ifstream data_file;
-	data_file.open("data/groundtruth.txt");
+	data_file.open(filename);
+	//data_file.open("data/groundtruth_fr1_xyz.txt");
 
 	std::string line;
 	std::vector<std::string> temp;
@@ -236,13 +273,39 @@ int main(){
 			// Detect whether or not it is reading a comment
 			if(line[0] != '#'){
 				temp = split(line,' ');
-				// Capturing Rotation data
-				// Recordemos que la funcion push_back crea una copia del argumento y la almacena en sus vectores
-				RBM.push_back(Quaternion_2_Mat44(std::stof(temp[1]),std::stof(temp[2]),std::stof(temp[3]),std::stof(temp[4]),std::stof(temp[5]),std::stof(temp[6]),std::stof(temp[7])));
-				//Quaternion q(std::stof(temp[4]),std::stof(temp[5]),std::stof(temp[6]),std::stof(temp[7]));
+				switch(motion_type){
+					case TCoord:{
+						data[std::stod(temp[0])] = TwistCoord_2_Mat44(std::stof(temp[1]),std::stof(temp[2]),std::stof(temp[3]),std::stof(temp[4]),std::stof(temp[5]),std::stof(temp[6]));
+						break;
+					}
+					case Quad:{
+						// Capturing Rotation data
+						// Recordemos que la funcion push_back crea una copia del argumento y la almacena en sus vectores
+						data[std::stod(temp[0])] = Quaternion_2_Mat44(std::stof(temp[1]),std::stof(temp[2]),std::stof(temp[3]),std::stof(temp[4]),std::stof(temp[5]),std::stof(temp[6]),std::stof(temp[7]));
+						//Quaternion q(std::stof(temp[4]),std::stof(temp[5]),std::stof(temp[6]),std::stof(temp[7]));
+						break;
+					}
+					default:{
+						break;
+					}
+				} // fin del switch case
 			}
 		} // Fin del bucle while
 	} // Fin del condicional exterior
+}
+
+// Align Function
+
+
+
+
+int main(){
+	// RBM(Rigid Body Motion) will store all the Mat44 matrices with their respecting timestampfor every frame
+	std::map<double,Mat44> RBM_gt;
+	std::map<double,Mat44> RBM_data;
+
+	read_inputfile(RBM_gt, "data/groundtruth_fr1_room.txt", Quad);
+	read_inputfile(RBM_data, "data/odometry.txt", TCoord);
 
 
 
@@ -292,30 +355,47 @@ int main(){
 	// Ensure we can capture the escape key being pressed below
 	glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
 
-
 	// Creamos y compilamos nuestro programa GLSL a partir de los shaders
-	GLuint programID = LoadShaders("shaders/t4.vertexshader", "shaders/t4.fragmentshader");
+	GLuint program1ID = LoadShaders("shaders/t4.vertexshader", "shaders/t4.fragmentshader");
+	GLuint program2ID = LoadShaders("shaders/axis.vertexshader", "shaders/axis.fragmentshader");
 
-	GLfloat vertices[RBM.size()*3];
+	GLfloat vertices[RBM_gt.size()*3];
 
-	for(int i = 0; i < RBM.size(); ++i){
-		vertices[i*3+0] = RBM[i].m[0][3];
-		vertices[i*3+1] = RBM[i].m[1][3];
-		vertices[i*3+2] = RBM[i].m[2][3];
+	{ // Loooping throught the elements
+		std::map<double,Mat44>::iterator it; int i;
+		for(i = 0, it = RBM_gt.begin(); i < RBM_gt.size(); ++i, ++it){
+			vertices[i*3+0] = it->second.m[0][3];
+			vertices[i*3+1] = it->second.m[1][3];
+			vertices[i*3+2] = it->second.m[2][3];
+		}
 	}
+
+	GLfloat axes[] = {
+		0.0f,	0.0f,	0.0f, 1.0f, 0.0f, 0.0f,
+		5.0f,	0.0f,	0.0f, 1.0f, 0.0f, 0.0f,
+		0.0f,	0.0f,	0.0f, 0.0f, 1.0f, 0.0f,
+		0.0f,	5.0f,	0.0f, 0.0f, 1.0f, 0.0f,
+		0.0f,	0.0f,	0.0f, 0.0f, 0.0f, 1.0f,
+		0.0f,	0.0f,	5.0f, 0.0f, 0.0f, 1.0f,
+	};
 
 
 	//
 	// Registering the VAOs
 	//
+	enum BuffersID{vertexBuffer, axisBuffer, NoBuffers};
+
 	GLuint VertexArrayID;
 	glGenVertexArrays(1, &VertexArrayID); // El primer argumento debe ser el numero de VAOs
 	glBindVertexArray(VertexArrayID);
 
-	GLuint vertexbuffer;
-	glGenBuffers(1, &vertexbuffer);
-	glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
+	GLuint Buffers[NoBuffers];
+	glGenBuffers(NoBuffers, Buffers);
+	glBindBuffer(GL_ARRAY_BUFFER, Buffers[vertexBuffer]);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+	glBindBuffer(GL_ARRAY_BUFFER, Buffers[axisBuffer]);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(axes), axes, GL_STATIC_DRAW);
 
 	//
 	// Fin de la Etapa de Registro
@@ -329,8 +409,8 @@ int main(){
 		// per-frame time logic
 
 		//while(deltaTime < TimePerFrame){
-			timeValue = glfwGetTime();
-			deltaTime = timeValue - lastFrame;
+		timeValue = glfwGetTime();
+		deltaTime = timeValue - lastFrame;
 		//}
 		lastFrame = timeValue;
 
@@ -345,30 +425,30 @@ int main(){
 		glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		// Use our shader
-		glUseProgram(programID);
+		glUseProgram(program1ID);
 
 		// Programming our View and Projection matrices
 		glm::mat4 view(1.0f);
 		view       = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
-		RegisterMatrix4fv(programID,"view",view);
+		RegisterMatrix4fv(program1ID,"view",view);
 
 		glm::mat4 projection(1.0f);
 		projection = glm::perspective(glm::radians(45.0f), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
-		RegisterMatrix4fv(programID,"projection",projection);
+		RegisterMatrix4fv(program1ID,"projection",projection);
 
 
 		// updating a uniform color
 		//float greenValue = sin(timeValue) / 2.0f + 0.5f;
 		float greenValue = 1.0f;
 		glm::vec4 vec(0.0f, greenValue, 0.0f, 1.0f);
-		RegisterUniform4fv(programID,"ourColor",vec);
+		RegisterUniform4fv(program1ID,"ourColor",vec);
 		//int vertexColorLocation = glGetUniformLocation(programID,"ourColor");
 		//glUniform4f(vertexColorLocation, 0.0f, greenValue, 0.0f, 1.0f);
 
 		/**Drawing stage**/
 		// 1st attribute buffer : vertices
 		glEnableVertexAttribArray(0);
-		glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
+		glBindBuffer(GL_ARRAY_BUFFER, Buffers[vertexBuffer]);
 		glVertexAttribPointer(
         	0,          // attribute 0. No particular reason for 0, but must match the layout in the shader
         	3,          // size
@@ -386,27 +466,66 @@ int main(){
         //float angle = 20.0f * i;
         //model = glm::rotate(model, (float)glfwGetTime() *  glm::radians(50.f), glm::vec3(1.0f, 0.3f, 0.5f));
         //model = glm::rotate(model, (float)glfwGetTime() *  glm::radians(angle), glm::vec3(1.0f, 0.3f, 0.5f));
-        RegisterMatrix4fv(programID,"model",model);
+        RegisterMatrix4fv(program1ID,"model",model);
 
         glDrawArrays(GL_LINE_STRIP, 0, frames); // 3 indices starting at 0 -> 1 triangle
 
         glDisableVertexAttribArray(0);
+
+        // Drawing Axis
+        // ------------
+
+        glUseProgram(program2ID);
+
+        RegisterMatrix4fv(program2ID,"view",view);
+        RegisterMatrix4fv(program2ID,"projection",projection);
+        RegisterMatrix4fv(program2ID,"model",model);
+
+        // 2nd attribute buffer : axis vertices
+        glEnableVertexAttribArray(0);
+		glBindBuffer(GL_ARRAY_BUFFER, Buffers[axisBuffer]);
+		glVertexAttribPointer(
+        	0,          // attribute 0. No particular reason for 0, but must match the layout in the shader
+        	3,          // size
+        	GL_FLOAT,   // type
+        	GL_FALSE,   // normalized?
+        	6 * sizeof(float),          // stride because we use (XXX CCC)
+        	(void*)0    // array buffer offset
+        );
+
+        // 3rd attribute buffer : axis colors
+        glEnableVertexAttribArray(1);
+		//glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer[1]);
+		glVertexAttribPointer(
+        	1,          // attribute 0. No particular reason for 0, but must match the layout in the shader
+        	3,          // size
+        	GL_FLOAT,   // type
+        	GL_FALSE,   // normalized?
+        	6 * sizeof(float),          // stride because we use (XXX CCC)
+        	(void*)(3 * sizeof(float))    // array buffer offset
+        );
+
+        glDrawArrays(GL_LINES, 0, 6);
+
+        glDisableVertexAttribArray(0);
+        glDisableVertexAttribArray(1);
 
         /**Final Stage: Refreshing buffers**/
         glfwSwapBuffers(window);
         glfwPollEvents(); // Revisa si se ha emitido algun evento
 
         frames++;
-        if(frames >= RBM.size())
+        if(frames >= RBM_gt.size())
         	frames--;
 	}
 	// Check if the ESC key was pressed or the window was closed
 	while(glfwGetKey(window,GLFW_KEY_ESCAPE) != GLFW_PRESS && glfwWindowShouldClose(window) == 0);
 
     // Cleanup VBO
-	glDeleteBuffers(1, &vertexbuffer);
+	glDeleteBuffers(NoBuffers, Buffers);
 	glDeleteVertexArrays(1, &VertexArrayID);
-	glDeleteProgram(programID);
+	glDeleteProgram(program1ID);
+	glDeleteProgram(program2ID);
 
 	glfwTerminate();
 

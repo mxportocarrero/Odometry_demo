@@ -307,6 +307,24 @@ int main(){
 	read_inputfile(RBM_gt, "data/groundtruth_fr1_room.txt", Quad);
 	read_inputfile(RBM_data, "data/odometry.txt", TCoord);
 
+	// En el caso de nuestra data. primero tenemos que acumularla para que lista para su uso
+	// Iteramos sobre todo nuestros datos y vamos acumulando las matrices para conocer su movimiento absoluto
+	{ // Loooping throught the elements
+		Mat44 AbsoluteRBM;
+		std::map<double,Mat44>::iterator it = RBM_data.begin();++it; int i;
+		// Comenzamos desde 1 porque la primera matriz es correcta, es decir la identidad
+		for(i = 1; i < RBM_data.size(); ++i, ++it){
+			dual_matmul_AVX8(AbsoluteRBM,AbsoluteRBM,it->second);
+
+			// Copy data into the map
+			for(int rows = 0; rows < 4; ++rows){
+				for(int cols = 0; cols < 4; ++cols){
+					it->second.m[rows][cols] = AbsoluteRBM.m[rows][cols];
+				}
+			}
+		}
+	} // Fin de encontrar las transformaciones absolutas
+
 
 
 	// Checking GLFW initialization
@@ -370,6 +388,17 @@ int main(){
 		}
 	}
 
+	GLfloat vertices_data[RBM_data.size()*3];
+
+	{ // Loooping throught the elements
+		std::map<double,Mat44>::iterator it; int i;
+		for(i = 0, it = RBM_data.begin(); i < RBM_data.size(); ++i, ++it){
+			vertices_data[i*3+0] = it->second.m[0][3];
+			vertices_data[i*3+1] = it->second.m[1][3];
+			vertices_data[i*3+2] = it->second.m[2][3];
+		}
+	}
+
 	GLfloat axes[] = {
 		0.0f,	0.0f,	0.0f, 1.0f, 0.0f, 0.0f,
 		5.0f,	0.0f,	0.0f, 1.0f, 0.0f, 0.0f,
@@ -383,7 +412,7 @@ int main(){
 	//
 	// Registering the VAOs
 	//
-	enum BuffersID{vertexBuffer, axisBuffer, NoBuffers};
+	enum BuffersID{vertexBuffer,vertexDataBuffer, axisBuffer, NoBuffers};
 
 	GLuint VertexArrayID;
 	glGenVertexArrays(1, &VertexArrayID); // El primer argumento debe ser el numero de VAOs
@@ -393,6 +422,9 @@ int main(){
 	glGenBuffers(NoBuffers, Buffers);
 	glBindBuffer(GL_ARRAY_BUFFER, Buffers[vertexBuffer]);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+	glBindBuffer(GL_ARRAY_BUFFER, Buffers[vertexDataBuffer]);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices_data), vertices_data, GL_STATIC_DRAW);
 
 	glBindBuffer(GL_ARRAY_BUFFER, Buffers[axisBuffer]);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(axes), axes, GL_STATIC_DRAW);
@@ -404,7 +436,7 @@ int main(){
 	// Etapa iterativa de la ventana
 	float TargetFPS = 20.0; // fps measured in milliseconds
 	float TimePerFrame = 1000.0 / TargetFPS; // in milliseconds
-	int frames = 0;float timeValue;
+	int frames = 0,frames_data = 0;float timeValue;
 	do{
 		// per-frame time logic
 
@@ -472,6 +504,26 @@ int main(){
 
         glDisableVertexAttribArray(0);
 
+        // Drawing Data
+        // ------------
+
+        //RegisterUniform4fv(program1ID,"ourColor",glm::vec4(1.0f,0.0f,0.0f,1.0f));
+
+        glEnableVertexAttribArray(0);
+		glBindBuffer(GL_ARRAY_BUFFER, Buffers[vertexDataBuffer]);
+		glVertexAttribPointer(
+        	0,          // attribute 0. No particular reason for 0, but must match the layout in the shader
+        	3,          // size
+        	GL_FLOAT,   // type
+        	GL_FALSE,   // normalized?
+        	3 * sizeof(float),          // stride
+        	(void*)0    // array buffer offset
+        );
+
+        glDrawArrays(GL_LINE_STRIP, 0, frames_data);
+
+        glDisableVertexAttribArray(0);
+
         // Drawing Axis
         // ------------
 
@@ -514,9 +566,11 @@ int main(){
         glfwSwapBuffers(window);
         glfwPollEvents(); // Revisa si se ha emitido algun evento
 
-        frames++;
+        frames++;frames_data++;
         if(frames >= RBM_gt.size())
         	frames--;
+        if(frames_data >= RBM_data.size())
+        	frames_data--;
 	}
 	// Check if the ESC key was pressed or the window was closed
 	while(glfwGetKey(window,GLFW_KEY_ESCAPE) != GLFW_PRESS && glfwWindowShouldClose(window) == 0);

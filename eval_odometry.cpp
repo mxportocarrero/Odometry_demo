@@ -72,6 +72,16 @@ union Mat44 {
     __m128 row[4];
 };
 
+void printMat44(const Mat44 &mat, const char* name){
+	std:: cout << name << ":\n";
+	for(int i = 0; i < 4; ++i){
+		for(int j = 0; j < 4; ++j){
+			std::cout << mat.m[i][j] <<  " ";
+		}
+		std::cout << "\n";
+	}
+}
+
 // Tengamos en cuenta que una multiplicación de matrices puede llevarse a cabo de diferentes formas
 // en nuestro caso, expresamos este proceso mediante combinaciones lineales(linear combination). Ver agenda
 static inline __m128  lincomb_SSE(const __m128 &a, const Mat44 &B){
@@ -116,14 +126,14 @@ void dual_matmul_AVX8(Mat44 &out, const Mat44 &A, const Mat44 &B){
 
 	// Cargamos los valores al registro, usamos la funcion para datos no alineados
 	__m256 A01 = _mm256_loadu_ps(&A.m[0][0]); // Filas 0 y 1
-	__m256 A23 = _mm256_loadu_ps(&A.m[0][0]); // Filas 2 y 3
+	__m256 A23 = _mm256_loadu_ps(&A.m[2][0]); // Filas 2 y 3
 
 	__m256 out01rows = dual_lincomb_AVX8(A01,B);
 	__m256 out23rows = dual_lincomb_AVX8(A23,B);
 
 	// Guardamos los valores calculados al sector de memoria especificado de salida
 	_mm256_storeu_ps(&out.m[0][0], out01rows);
-	_mm256_storeu_ps(&out.m[0][0], out23rows);
+	_mm256_storeu_ps(&out.m[2][0], out23rows);
 }
 
 //Realizamos un enum para tener un mejor acceso a las variables
@@ -311,10 +321,27 @@ int main(){
 	// Iteramos sobre todo nuestros datos y vamos acumulando las matrices para conocer su movimiento absoluto
 	{ // Loooping throught the elements
 		Mat44 AbsoluteRBM;
+		float ARBM[] = {
+			1,	0,	0,	0,
+			0,	1,	0,	0,
+			0,	0,	1,	0,
+			0,	0,	0,	1
+		};
+
+		std::copy(ARBM,ARBM+16,AbsoluteRBM.m[0]);
+
 		std::map<double,Mat44>::iterator it = RBM_data.begin();++it; int i;
 		// Comenzamos desde 1 porque la primera matriz es correcta, es decir la identidad
 		for(i = 1; i < RBM_data.size(); ++i, ++it){
-			dual_matmul_AVX8(AbsoluteRBM,AbsoluteRBM,it->second);
+
+			Mat44 tempResult;
+
+			//dual_matmul_AVX8(tempResult,AbsoluteRBM,it->second);
+			dual_matmul_AVX8(tempResult,it->second,AbsoluteRBM);
+
+			// Copiamos el resultado de tempResult en la matriz Absoluta
+			_mm256_storeu_ps(&AbsoluteRBM.m[0][0], _mm256_loadu_ps(&tempResult.m[0][0]));
+			_mm256_storeu_ps(&AbsoluteRBM.m[2][0], _mm256_loadu_ps(&tempResult.m[2][0]));
 
 			// Copy data into the map
 			for(int rows = 0; rows < 4; ++rows){
@@ -393,10 +420,17 @@ int main(){
 	{ // Loooping throught the elements
 		std::map<double,Mat44>::iterator it; int i;
 		for(i = 0, it = RBM_data.begin(); i < RBM_data.size(); ++i, ++it){
+		//for(i = 0, it = RBM_data.begin(); i < 20; ++i, ++it){
+			//printMat44(it->second,"mat**");
 			vertices_data[i*3+0] = it->second.m[0][3];
 			vertices_data[i*3+1] = it->second.m[1][3];
 			vertices_data[i*3+2] = it->second.m[2][3];
 		}
+	}
+
+	// Imprimir algunos valores
+	for(int i = 0; i < 30; ++i){
+		std::cout << vertices_data[i*3+0] << " " << vertices_data[i*3+1] << " " << vertices_data[i*3+2] << "\n";
 	}
 
 	GLfloat axes[] = {
@@ -506,6 +540,9 @@ int main(){
 
         // Drawing Data
         // ------------
+
+        vec = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
+		RegisterUniform4fv(program1ID,"ourColor",vec);
 
         //RegisterUniform4fv(program1ID,"ourColor",glm::vec4(1.0f,0.0f,0.0f,1.0f));
 

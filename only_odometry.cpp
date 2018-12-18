@@ -1,7 +1,7 @@
 /**
 Rotating Cubes in 3D in Perspective View
 
-g++ eval_odometry.cpp common/shader.cpp -o eval_odometry -lGL -lGLEW -lglfw -O3 -mavx2
+g++ only_odometry.cpp common/shader.cpp -o only_odometry -lGL -lGLEW -lglfw -O3 -mavx2
 
 Tambien podemos verificar el makefile que realizes
 **/
@@ -269,7 +269,7 @@ float lastFrame = 0.0f;
 
 using namespace std;
 
-enum MotionType{RBM_mat,TCoord,Quad};
+enum MotionType{RBM_mat,TCoord,Quad,NoMotionRepresentations};
 
 void read_inputfile(std::map<double,Mat44> & data, const char* filename, const int & motion_type){
 	// Loading/Reading Groundtruth Data
@@ -317,8 +317,8 @@ int main(){
 
 	//read_inputfile(RBM_gt, "data/groundtruth_fr1_room.txt", Quad);
 	//read_inputfile(RBM_data, "data/odometry.txt", TCoord);
-	read_inputfile(RBM_gt, groundtruths[fr1_room], Quad);
-	read_inputfile(RBM_data, out_fast[fr1_room], TCoord);
+	read_inputfile(RBM_gt, groundtruths[fr2_large_no_loop], Quad);
+	read_inputfile(RBM_data, out_fast[fr2_large_no_loop], TCoord);
 
 	// En el caso de nuestra data. primero tenemos que acumularla para los puntos esten referenciados a mismo frame coordinate
 	// Iteramos sobre todo nuestros datos y vamos acumulando las matrices para conocer su movimiento absoluto
@@ -380,15 +380,15 @@ int main(){
 	}
 
 	// Verificamos los datos asociados // DESCOMENTAR
-	// std::cout << "Asociated data\n";
-	// for(int i  = 0; i < v_gt.size(); ++i){
-	// 	std::cout.precision(15);
-	// 	std::cout << i << " " << v_gt[i] << " " << v_data[i] << " ";
-	// 	if(i < v_gt.size() - 1){
-	// 		std::cout.precision(3);
-	// 		std::cout << v_gt[i+1] - v_gt[i] << std::endl;
-	// 	}
-	// }
+	std::cout << "Asociated data\n";
+	for(int i  = 0; i < v_gt.size(); ++i){
+		std::cout.precision(15);
+		std::cout << i << " " << v_gt[i] << " " << v_data[i] << " ";
+		if(i < v_gt.size() - 1){
+			std::cout.precision(3);
+			std::cout << v_gt[i+1] - v_gt[i] << std::endl;
+		}
+	}
 
 	std::cout.precision(4);
 	// Checking GLFW initialization

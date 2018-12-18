@@ -150,4 +150,56 @@ Eigen::VectorXd rbm2twistcoord(const Eigen::Matrix4d & g){
     return xi;
 }
 
+// p & q must have same size
+Eigen::Matrix4d QuickTransformation(const std::vector<Eigen::Vector3d> &p,const std::vector<Eigen::Vector3d> &q)
+{
+
+    //Compute Center of Mass for each point clouds
+    Eigen::Vector3d p_center(0.0f,0.0f,0.0f);
+    Eigen::Vector3d q_center(0.0f,0.0f,0.0f);
+
+    int n = p.size();
+
+    for(int i = 0; i < n;i++){
+        p_center += p[i];
+        q_center += q[i];
+    }
+
+    p_center = p_center / (double) n;
+    q_center = q_center / (double) n;
+
+    Eigen::MatrixXd w = Eigen::MatrixXd::Zero(3,3);
+    for(int i = 0; i < n; i++){
+        w += (p[i] - p_center) * (q[i] - q_center).transpose();
+    }
+
+    //Eigen::MatrixXd m = Eigen::MatrixXd::Identity(4,4);
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(w,Eigen::ComputeThinU | Eigen::ComputeThinV);
+    //cout << "Its singular values are: " << endl  << svd.singularValues() << endl;
+    //cout << "Its left singular vector are the columns of the thin U matrix:" << endl << svd.matrixU() << endl;
+    //cout << "Its right singular vector are the columns of the thin V matrix:" << endl << svd.matrixV() << endl;
+
+    // Calculamos la Rotacion
+    // Ojo la matriz V debe ser traspuestas antes de ser usada
+    Eigen::MatrixXd R = svd.matrixU() * svd.matrixV().transpose();
+    //cout << "Rotation matrix:" << endl << R << endl;
+
+    // Calculamos la Traslacion
+    Eigen::Vector3d t = p_center - R * q_center;
+    //cout << "Traslation matrix:" << endl << t << endl;
+
+    // Componemos la matriz de Transformacion
+    // [ R t ]
+    // [ 0 1 ]
+    Eigen::Matrix4d transformation = Eigen::Matrix4d::Identity();
+    for(int i = 0; i < 3;i++)
+        for(int j = 0; j < 3; j++)
+            transformation(i,j) = R(i,j);
+    for(int i = 0 ; i < 3; i++)
+        transformation(i,3) = t(i);
+    //cout << "Matriz de Transformacion(Target-->Source)" << endl << transformation << endl;
+
+    return transformation;
+}
+
 #endif // LINEAR_ALGEBRA_FUNCTIONS_HPP
